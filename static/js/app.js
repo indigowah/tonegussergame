@@ -36,6 +36,13 @@
   };
   const promptText = document.getElementById('prompt-text');
   const answerButtons = Array.from(document.querySelectorAll('.answer'));
+  const defaultAnswerOptions = answerButtons.map((button) => {
+    const label = (button.textContent || '').trim();
+    return {
+      id: label,
+      label,
+    };
+  });
   const answerSection = document.querySelector('.answer-grid');
   const modeChecklist = document.getElementById('mode-checklist');
   const modeForm = document.getElementById('mode-form');
@@ -343,6 +350,105 @@
     }
   }
 
+  function normalizeAnswerValue(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value).trim();
+  }
+
+  function normalizeAnswerOption(option) {
+    if (option === null || option === undefined) {
+      return null;
+    }
+    if (typeof option === 'string' || typeof option === 'number') {
+      const id = normalizeAnswerValue(option);
+      return {
+        id,
+        label: String(option),
+      };
+    }
+    if (typeof option === 'object') {
+      const idSource =
+        option.id ??
+        option.value ??
+        option.answer ??
+        option.key ??
+        option.slug ??
+        option.identifier;
+      const labelSource =
+        option.label ??
+        option.text ??
+        option.name ??
+        option.title ??
+        option.display ??
+        option.caption;
+      const id =
+        idSource !== undefined && idSource !== null
+          ? normalizeAnswerValue(idSource)
+          : labelSource !== undefined && labelSource !== null
+          ? normalizeAnswerValue(labelSource)
+          : '';
+      const label =
+        labelSource !== undefined && labelSource !== null
+          ? String(labelSource)
+          : idSource !== undefined && idSource !== null
+          ? String(idSource)
+          : '';
+      if (!id) {
+        return null;
+      }
+      return {
+        id,
+        label: label || id,
+      };
+    }
+    return null;
+  }
+
+  function resolveAnswerOptions(item) {
+    if (!item) {
+      return defaultAnswerOptions.map((entry) => ({ ...entry }));
+    }
+    const candidates = [
+      item.options,
+      item.choices,
+      item.answers,
+      item.answerOptions,
+      item.variants,
+    ];
+    for (const list of candidates) {
+      if (Array.isArray(list) && list.length) {
+        return list;
+      }
+    }
+    return defaultAnswerOptions.map((entry) => ({ ...entry }));
+  }
+
+  function renderAnswers() {
+    const item = state.currentItem;
+    const rawOptions = resolveAnswerOptions(item);
+    answerButtons.forEach((button, index) => {
+      const fallback = defaultAnswerOptions[index] || { id: '', label: '' };
+      const rawOption = rawOptions[index];
+      const normalized = normalizeAnswerOption(rawOption) || fallback;
+      if (normalized.id) {
+        button.dataset.answer = normalizeAnswerValue(normalized.id);
+      } else {
+        delete button.dataset.answer;
+      }
+      const label =
+        normalized.label !== undefined && normalized.label !== null
+          ? normalized.label
+          : normalized.id;
+      if (label !== undefined && label !== null && label !== '') {
+        button.textContent = label;
+      } else if (fallback.label) {
+        button.textContent = fallback.label;
+      }
+    });
+  }
+
   function nextPrompt() {
     if (!state.gameActive) {
       return;
@@ -406,12 +512,13 @@
       return;
     }
     const button = event.currentTarget;
-    const answer = button.dataset.answer;
+    const answer = normalizeAnswerValue(button.dataset.answer);
     if (!state.currentItem) {
       showToast('Press play to start.', 'info');
       return;
     }
-    const isCorrect = String(state.currentItem.answer) === String(answer);
+    const correctAnswer = normalizeAnswerValue(state.currentItem.answer);
+    const isCorrect = correctAnswer === answer;
     registerResult(isCorrect, answer);
     giveFeedback(isCorrect, button);
     nextPrompt();
@@ -518,6 +625,7 @@
     state.gameActive = false;
     state.currentItem = null;
     state.currentMode = null;
+    renderAnswers();
     hideAnswers();
     resetPrompt();
     updateStatsDisplay();
@@ -653,6 +761,7 @@
     hydrateForm();
     initThemeFromDocument();
     bindEvents();
+    renderAnswers();
     hideAnswers();
     resetPrompt();
     fetchCatalog();
