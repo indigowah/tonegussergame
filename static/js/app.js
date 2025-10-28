@@ -342,15 +342,67 @@
     playFeedbackSound(isCorrect);
   }
 
+  let pendingFeedbackTimeout = null;
+  let pendingFeedbackListener = null;
+
+  function clearPendingFeedback() {
+    if (pendingFeedbackTimeout !== null) {
+      window.clearTimeout(pendingFeedbackTimeout);
+      pendingFeedbackTimeout = null;
+    }
+    if (pendingFeedbackListener) {
+      state.audio.removeEventListener('ended', pendingFeedbackListener);
+      pendingFeedbackListener = null;
+    }
+  }
+
   function playFeedbackSound(isCorrect) {
+    clearPendingFeedback();
     const url = isCorrect
       ? '/sounds/feedback/correct.mp3'
       : '/sounds/feedback/wrong.mp3';
-    const sfx = new Audio(url);
-    sfx.volume = Number(state.preferences.volume);
-    sfx.play().catch(() => {
-      /* ignore */
-    });
+
+    const playCue = () => {
+      const sfx = new Audio(url);
+      sfx.volume = Number(state.preferences.volume);
+      sfx.play().catch(() => {
+        /* ignore */
+      });
+    };
+
+    if (isCorrect) {
+      playCue();
+      return;
+    }
+
+    const scheduleCue = () => {
+      pendingFeedbackTimeout = window.setTimeout(() => {
+        pendingFeedbackTimeout = null;
+        playCue();
+      }, 100);
+    };
+
+    const audio = state.audio;
+    if (!audio) {
+      scheduleCue();
+      return;
+    }
+
+    if (audio.ended) {
+      scheduleCue();
+      return;
+    }
+
+    const currentSrc = audio.currentSrc;
+    pendingFeedbackListener = () => {
+      // Ignore events triggered for a different source.
+      if (currentSrc && audio.currentSrc && audio.currentSrc !== currentSrc) {
+        return;
+      }
+      clearPendingFeedback();
+      scheduleCue();
+    };
+    audio.addEventListener('ended', pendingFeedbackListener, { once: true });
   }
 
   function endGame() {
