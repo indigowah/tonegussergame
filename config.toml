@@ -1,0 +1,51 @@
+[general]
+input = "Nasal finals.m4a"
+output_dir = "nasal_finals_output"
+format = "mp3"
+combined_name = "nasal_finals_combined.mp3"
+
+[detect]
+enabled = true
+noise_db = -25
+min_silence = 0.07
+pad = 0.09
+
+[clips]
+count = 64
+names = [
+    # an
+    "ān", "án", "ǎn", "àn",
+    # en
+    "ēn", "én", "ěn", "èn",
+    # ang
+    "āng", "áng", "ǎng", "àng",
+    # eng
+    "ēng", "éng", "ěng", "èng",
+    # ong
+    "ōng", "óng", "ǒng", "òng",
+
+    # ian (also yān, yán, yǎn, yàn)
+    "iān", "ián", "iǎn", "iàn",
+    # in (also yīn, yín, yǐn, yìn)
+    "īn", "ín", "ǐn", "ìn",
+    # iang (also yāng, yáng, yǎng, yàng)
+    "iāng", "iáng", "iǎng", "iàng",
+    # ing (also yīng, yíng, yǐng, yìng)
+    "īng", "íng", "ǐng", "ìng",
+    # iong (also yōng, yóng, yǒng, yòng)
+    "iōng", "ióng", "iǒng", "iòng",
+
+    # uan (also wān, wán, wǎn, wàn)
+    "uān", "uán", "uǎn", "uàn",
+    # uen (also wēn, wén, wěn, wèng)  # often spelled "un"
+    "uēn", "uén", "uěn", "uèn",
+    # uang (also wāng, wáng, wǎng, wàng)
+    "uāng", "uáng", "uǎng", "uàng",
+    # ueng (also wēng, wéng, wěng, wèng)
+    "uēng", "uéng", "uěng", "uèng",
+
+    # üan (also yuān, yuán, yuǎn, yuàn)
+    "üān", "üán", "üǎn", "üàn",
+    # ün (also yūn, yún, yǔn, yùn)
+    "ǖn", "ǘn", "ǚn", "ǜn"
+]
