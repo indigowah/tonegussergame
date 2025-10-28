@@ -12,7 +12,7 @@ import uuid
 from io import BytesIO
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -222,6 +222,52 @@ app.mount("/chinese_audio", StaticFiles(directory=CHINESE_AUDIO_DIR), name="chin
 app.mount("/sounds/feedback", StaticFiles(directory=FEEDBACK_DIR), name="feedback")
 
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+
+def _build_catalog_payload() -> List[Dict[str, Any]]:
+    catalog = catalog_manager.get_catalog()
+    grouped: Dict[str, Dict[str, Any]] = {}
+
+    for entry in catalog.values():
+        relative_path = Path(str(entry.get("path", "")))
+        if not relative_path.parts:
+            mode_key = "default"
+        else:
+            mode_key = relative_path.parts[0]
+
+        mode = grouped.setdefault(
+            mode_key,
+            {
+                "id": mode_key,
+                "name": mode_key.replace("_", " ").title(),
+                "items": [],
+            },
+        )
+
+        item_name = relative_path.stem or entry.get("soundId") or "item"
+        mode["items"].append(
+            {
+                "id": entry.get("soundId"),
+                "name": item_name,
+                "answer": item_name,
+                "difficulty": entry.get("difficulty", 1),
+                "url": f"/chinese_audio/{entry.get('path', '')}",
+                "updatedAt": entry.get("updatedAt"),
+            }
+        )
+
+    payload: List[Dict[str, Any]] = []
+    for key in sorted(grouped):
+        mode = grouped[key]
+        mode["items"].sort(key=lambda item: (item.get("name") or "").lower())
+        payload.append(mode)
+    return payload
+
+
+@app.get("/catalog.json")
+def get_catalog() -> JSONResponse:
+    payload = _build_catalog_payload()
+    return JSONResponse(payload)
 
 
 class Database:
