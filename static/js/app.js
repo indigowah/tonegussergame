@@ -136,6 +136,7 @@
     }
     answerButtons.forEach((button) => {
       button.setAttribute('disabled', 'true');
+      button.textContent = '';
     });
   }
 
@@ -145,6 +146,112 @@
     }
     answerButtons.forEach((button) => {
       button.removeAttribute('disabled');
+    });
+  }
+
+  function normalizeOption(option, fallbackValue, fallbackLabel) {
+    if (option == null) {
+      return null;
+    }
+    if (typeof option !== 'object') {
+      const value = option ?? fallbackValue;
+      const displayName =
+        typeof option === 'string' || typeof option === 'number'
+          ? String(option)
+          : fallbackLabel ?? (value != null ? String(value) : '');
+      return { value, displayName };
+    }
+    const value =
+      option.value ??
+      option.answer ??
+      option.id ??
+      option.key ??
+      option.code ??
+      fallbackValue;
+    const displayName =
+      option.displayName ??
+      option.label ??
+      option.name ??
+      option.text ??
+      option.title ??
+      fallbackLabel ??
+      (value != null ? String(value) : '');
+    return { value, displayName };
+  }
+
+  function deriveAnswerOptions(item) {
+    if (!item) return [];
+    const primaryLists = [item.options, item.choices, item.answers].find((list) =>
+      Array.isArray(list)
+    );
+
+    if (primaryLists && Array.isArray(primaryLists)) {
+      return primaryLists
+        .map((entry, index) => normalizeOption(entry, index + 1, null))
+        .filter(Boolean);
+    }
+
+    const options = [];
+    const answerValue =
+      item.answer ?? item.value ?? item.id ?? item.soundId ?? item.name ?? '';
+    const answerLabel =
+      item.displayName ??
+      item.answerDisplayName ??
+      item.label ??
+      item.name ??
+      (answerValue != null ? String(answerValue) : '');
+    const answerOption = normalizeOption(
+      { value: answerValue, displayName: answerLabel },
+      answerValue,
+      answerLabel
+    );
+    if (answerOption) {
+      options.push(answerOption);
+    }
+
+    const distractors = Array.isArray(item.distractors) ? item.distractors : [];
+    distractors
+      .map((entry, index) => normalizeOption(entry, index + 2, null))
+      .filter(Boolean)
+      .forEach((entry) => options.push(entry));
+
+    return options;
+  }
+
+  function assignAnswerLabels(item = state.currentItem) {
+    if (!answerButtons.length) return;
+    const options = deriveAnswerOptions(item);
+    if (!options.length) {
+      answerButtons.forEach((button) => {
+        button.textContent = '';
+      });
+      return;
+    }
+
+    const optionMap = new Map();
+    options.forEach((option, index) => {
+      const key =
+        option && option.value != null && option.value !== ''
+          ? String(option.value)
+          : String(index + 1);
+      if (!optionMap.has(key)) {
+        optionMap.set(key, option);
+      }
+    });
+
+    answerButtons.forEach((button, index) => {
+      const datasetKey = button.dataset.answer ?? '';
+      const option = optionMap.get(datasetKey) || options[index] || null;
+      if (option) {
+        const label = option.displayName || String(option.value ?? datasetKey);
+        button.textContent = label;
+        if (option.value != null && option.value !== '') {
+          button.dataset.answer = String(option.value);
+        }
+      } else {
+        button.textContent = '';
+        delete button.dataset.answer;
+      }
     });
   }
 
@@ -373,7 +480,7 @@
       endGame();
       return;
     }
-    renderAnswers();
+    assignAnswerLabels(state.currentItem);
     updateStatsDisplay();
     showAnswers();
     playCurrent();
@@ -450,15 +557,67 @@
     playFeedbackSound(isCorrect);
   }
 
+  let pendingFeedbackTimeout = null;
+  let pendingFeedbackListener = null;
+
+  function clearPendingFeedback() {
+    if (pendingFeedbackTimeout !== null) {
+      window.clearTimeout(pendingFeedbackTimeout);
+      pendingFeedbackTimeout = null;
+    }
+    if (pendingFeedbackListener) {
+      state.audio.removeEventListener('ended', pendingFeedbackListener);
+      pendingFeedbackListener = null;
+    }
+  }
+
   function playFeedbackSound(isCorrect) {
+    clearPendingFeedback();
     const url = isCorrect
       ? '/sounds/feedback/correct.mp3'
       : '/sounds/feedback/wrong.mp3';
-    const sfx = new Audio(url);
-    sfx.volume = Number(state.preferences.volume);
-    sfx.play().catch(() => {
-      /* ignore */
-    });
+
+    const playCue = () => {
+      const sfx = new Audio(url);
+      sfx.volume = Number(state.preferences.volume);
+      sfx.play().catch(() => {
+        /* ignore */
+      });
+    };
+
+    if (isCorrect) {
+      playCue();
+      return;
+    }
+
+    const scheduleCue = () => {
+      pendingFeedbackTimeout = window.setTimeout(() => {
+        pendingFeedbackTimeout = null;
+        playCue();
+      }, 100);
+    };
+
+    const audio = state.audio;
+    if (!audio) {
+      scheduleCue();
+      return;
+    }
+
+    if (audio.ended) {
+      scheduleCue();
+      return;
+    }
+
+    const currentSrc = audio.currentSrc;
+    pendingFeedbackListener = () => {
+      // Ignore events triggered for a different source.
+      if (currentSrc && audio.currentSrc && audio.currentSrc !== currentSrc) {
+        return;
+      }
+      clearPendingFeedback();
+      scheduleCue();
+    };
+    audio.addEventListener('ended', pendingFeedbackListener, { once: true });
   }
 
   function endGame() {
