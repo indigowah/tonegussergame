@@ -10,7 +10,7 @@ import threading
 import time
 import uuid
 from io import BytesIO
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -52,23 +52,6 @@ RECENT_EXCLUSION = 10
 
 for directory in (STATIC_DIR, CHINESE_AUDIO_DIR, FEEDBACK_DIR, TEMPLATES_DIR):
     os.makedirs(directory, exist_ok=True)
-
-app = FastAPI(title="Tone Gusser Game")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-app.mount("/chinese_audio", StaticFiles(directory=CHINESE_AUDIO_DIR), name="chinese_audio")
-app.mount("/sounds/feedback", StaticFiles(directory=FEEDBACK_DIR), name="feedback")
-
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
-
 
 def _ensure_directories() -> None:
     for path in (STATIC_DIR, CHINESE_AUDIO_DIR, FEEDBACK_DIR, TEMPLATES_DIR):
@@ -212,6 +195,33 @@ class CatalogManager:
 
 _ensure_directories()
 catalog_manager = CatalogManager(CHINESE_AUDIO_DIR)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _ensure_directories()
+    catalog_manager.refresh(force=True)
+    try:
+        yield
+    finally:
+        catalog_manager.shutdown()
+
+
+app = FastAPI(title="Tone Gusser Game", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/chinese_audio", StaticFiles(directory=CHINESE_AUDIO_DIR), name="chinese_audio")
+app.mount("/sounds/feedback", StaticFiles(directory=FEEDBACK_DIR), name="feedback")
+
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
 class Database:
@@ -466,17 +476,6 @@ async def load_user(request: Request, call_next):
                     request.state.session_id = session_id
     response = await call_next(request)
     return response
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    _ensure_directories()
-    catalog_manager.refresh(force=True)
-
-
-@app.on_event("shutdown")
-async def on_shutdown() -> None:
-    catalog_manager.shutdown()
 
 
 @app.post("/api/signup", response_model=User)
