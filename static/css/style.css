@@ -92,6 +92,10 @@ button {
   color: inherit;
 }
 
+.hidden {
+  display: none !important;
+}
+
 button:hover,
 button:focus-visible {
   transform: translateY(-1px);
@@ -180,6 +184,10 @@ button[disabled] {
   background: var(--ctp-surface);
   padding: 1.25rem;
   border-radius: var(--radius-md);
+}
+
+.settings-open #download-report {
+  display: none !important;
 }
 
 .hud-grid {
