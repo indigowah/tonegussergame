@@ -1,38 +1,47 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Login - Tone Gusser</title>
-  <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-  <h1>Login</h1>
-  <form id="login-form">
-    <label for="username">Username</label>
-    <input type="text" id="username" name="username" required>
-    <label for="password">Password</label>
-    <input type="password" id="password" name="password" required>
-    <button type="submit">Login</button>
-  </form>
-  <script>
-    const form = document.getElementById('login-form');
-    form.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const payload = {
-        username: form.username.value,
-        password: form.password.value
-      };
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (response.ok) {
-        window.location.href = '/';
-      } else {
-        alert('Login failed');
-      }
-    });
-  </script>
-</body>
+<html lang="en" data-theme="latte">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tone Gusser - Login</title>
+    <link rel="stylesheet" href="/static/css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <h1>Tone Gusser</h1>
+      <button id="theme-toggle" type="button" aria-pressed="false">
+        <span class="theme-icon" aria-hidden="true">🌗</span>
+        <span class="theme-label">Toggle theme</span>
+      </button>
+    </header>
+    <main class="auth-main" aria-labelledby="login-title">
+      <section class="auth-card">
+        <h2 id="login-title">Sign in to continue</h2>
+        <p class="auth-description">
+          Use your credentials to access the Tone Gusser dashboard and start
+          practicing.
+        </p>
+        <form class="auth-form" method="post" action="/login">
+          <label class="auth-field">
+            <span>Email</span>
+            <input type="email" name="email" autocomplete="email" required />
+          </label>
+          <label class="auth-field">
+            <span>Password</span>
+            <input
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              required
+            />
+          </label>
+          <button type="submit" class="primary">Sign in</button>
+        </form>
+        <footer class="auth-footer">
+          <a href="/forgot-password">Forgot password?</a>
+        </footer>
+      </section>
+    </main>
+    <script src="/static/js/app.js" defer></script>
+  </body>
 </html>
