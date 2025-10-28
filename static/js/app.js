@@ -16,6 +16,7 @@
     currentMode: null,
     currentItem: null,
     audio: new Audio(),
+    gameActive: false,
     stats: {
       correct: 0,
       wrong: 0,
@@ -35,6 +36,7 @@
   };
   const promptText = document.getElementById('prompt-text');
   const answerButtons = Array.from(document.querySelectorAll('.answer'));
+  const answerSection = document.querySelector('.answer-grid');
   const modeChecklist = document.getElementById('mode-checklist');
   const modeForm = document.getElementById('mode-form');
   const listeningToggle = document.getElementById('listening-mode');
@@ -47,6 +49,7 @@
   const playButton = document.getElementById('play-button');
   const replayButton = document.getElementById('replay-button');
   const skipButton = document.getElementById('skip-button');
+  const endButton = document.getElementById('end-button');
   const downloadReport = document.getElementById('download-report');
 
   function loadPreferences() {
@@ -120,11 +123,36 @@
     }, 2400);
   }
 
+  function hideAnswers() {
+    if (answerSection) {
+      answerSection.classList.add('hidden');
+    }
+    answerButtons.forEach((button) => {
+      button.setAttribute('disabled', 'true');
+    });
+  }
+
+  function showAnswers() {
+    if (answerSection) {
+      answerSection.classList.remove('hidden');
+    }
+    answerButtons.forEach((button) => {
+      button.removeAttribute('disabled');
+    });
+  }
+
+  function resetPrompt(message = 'Select a mode and press play to start.') {
+    if (!promptText) return;
+    promptText.textContent = message;
+    promptText.className = '';
+  }
+
   function openSettings() {
     if (!settingsDrawer) return;
     settingsDrawer.dataset.open = 'true';
     settingsDrawer.setAttribute('aria-hidden', 'false');
     if (settingsToggle) settingsToggle.setAttribute('aria-expanded', 'true');
+    document.body?.classList.add('settings-open');
   }
 
   function closeSettings() {
@@ -132,6 +160,7 @@
     settingsDrawer.dataset.open = 'false';
     settingsDrawer.setAttribute('aria-hidden', 'true');
     if (settingsToggle) settingsToggle.setAttribute('aria-expanded', 'false');
+    document.body?.classList.remove('settings-open');
   }
 
   function toggleSettings() {
@@ -200,20 +229,34 @@
     }
     state.preferences.modes = Array.from(modes);
     savePreferences();
+    if (!modes.size) {
+      endGame();
+    } else if (!state.gameActive) {
+      hideAnswers();
+    }
   }
 
   function nextPrompt() {
-    if (!state.catalog.length) {
-      showToast('Load a catalog to start playing.', 'error');
+    if (!state.gameActive) {
       return;
     }
-    const availableModes = state.preferences.modes.length
-      ? state.catalog.filter((entry) =>
-          state.preferences.modes.includes(entry.id || entry.name)
-        )
-      : state.catalog;
+    if (!state.catalog.length) {
+      showToast('Load a catalog to start playing.', 'error');
+      endGame();
+      return;
+    }
+    const selectedModes = state.preferences.modes || [];
+    if (!selectedModes.length) {
+      showToast('Select at least one mode to continue.', 'error');
+      endGame();
+      return;
+    }
+    const availableModes = state.catalog.filter((entry) =>
+      selectedModes.includes(entry.id || entry.name)
+    );
     if (!availableModes.length) {
       showToast('Select at least one mode to continue.', 'error');
+      endGame();
       return;
     }
     const mode = sample(availableModes);
@@ -221,9 +264,11 @@
     state.currentItem = sample(mode.items || []);
     if (!state.currentItem) {
       showToast('Mode has no items.', 'error');
+      endGame();
       return;
     }
     updateStatsDisplay();
+    showAnswers();
     playCurrent();
     if (promptText) {
       promptText.textContent = 'Identify the tone you hear.';
@@ -244,6 +289,10 @@
   }
 
   function handleAnswer(event) {
+    if (!state.gameActive) {
+      showToast('Start the game before guessing.', 'info');
+      return;
+    }
     if (state.preferences.listeningMode) {
       showToast('Listening mode enabled: answers disabled.', 'info');
       return;
@@ -304,6 +353,16 @@
     });
   }
 
+  function endGame() {
+    state.audio.pause();
+    state.gameActive = false;
+    state.currentItem = null;
+    state.currentMode = null;
+    hideAnswers();
+    resetPrompt();
+    updateStatsDisplay();
+  }
+
   function sample(list) {
     if (!list || !list.length) return null;
     const index = Math.floor(Math.random() * list.length);
@@ -319,6 +378,9 @@
         : 'Listening mode disabled.',
       'info'
     );
+    if (!state.gameActive) {
+      hideAnswers();
+    }
   }
 
   function onVolumeChange(event) {
@@ -354,6 +416,12 @@
   }
 
   function onPlay() {
+    if (!state.preferences.modes || !state.preferences.modes.length) {
+      showToast('Select at least one mode in Settings to start.', 'error');
+      endGame();
+      return;
+    }
+    state.gameActive = true;
     if (!state.currentItem) {
       nextPrompt();
       return;
@@ -362,6 +430,10 @@
   }
 
   function onReplay() {
+    if (!state.gameActive) {
+      showToast('Start the game to replay.', 'info');
+      return;
+    }
     if (!state.currentItem) {
       showToast('Nothing to replay yet.', 'info');
       return;
@@ -370,6 +442,10 @@
   }
 
   function onSkip() {
+    if (!state.gameActive) {
+      showToast('Start the game to skip prompts.', 'info');
+      return;
+    }
     if (!state.catalog.length) {
       showToast('No catalog loaded.', 'error');
       return;
@@ -395,6 +471,7 @@
     if (playButton) playButton.addEventListener('click', onPlay);
     if (replayButton) replayButton.addEventListener('click', onReplay);
     if (skipButton) skipButton.addEventListener('click', onSkip);
+    if (endButton) endButton.addEventListener('click', endGame);
     if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape') {
@@ -416,6 +493,8 @@
     hydrateForm();
     initThemeFromDocument();
     bindEvents();
+    hideAnswers();
+    resetPrompt();
     fetchCatalog();
     updateStatsDisplay();
     updateReportLink();
