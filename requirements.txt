@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+jinja2
+watchdog
+pillow
+python-multipart
+pytest
+pytest-asyncio
+httpx==0.27.*
+anyio
+freezegun
+playwright
+pytest-playwright
