@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="latte">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tone Gusser - Login</title>
+    <link rel="stylesheet" href="/static/css/style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <h1>Tone Gusser</h1>
+      <button id="theme-toggle" type="button" aria-pressed="false">
+        <span class="theme-icon" aria-hidden="true">🌗</span>
+        <span class="theme-label">Toggle theme</span>
+      </button>
+    </header>
+    <main class="auth-main" aria-labelledby="login-title">
+      <section class="auth-card">
+        <h2 id="login-title">Sign in to continue</h2>
+        <p class="auth-description">
+          Use your credentials to access the Tone Gusser dashboard and start
+          practicing.
+        </p>
+        <form class="auth-form" method="post" action="/login">
+          <label class="auth-field">
+            <span>Email</span>
+            <input type="email" name="email" autocomplete="email" required />
+          </label>
+          <label class="auth-field">
+            <span>Password</span>
+            <input
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              required
+            />
+          </label>
+          <button type="submit" class="primary">Sign in</button>
+        </form>
+        <footer class="auth-footer">
+          <a href="/forgot-password">Forgot password?</a>
+        </footer>
+      </section>
+    </main>
+    <script src="/static/js/app.js" defer></script>
+  </body>
+</html>
