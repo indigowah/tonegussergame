@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Login - Tone Gusser</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <h1>Login</h1>
+  <form id="login-form">
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username" required>
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required>
+    <button type="submit">Login</button>
+  </form>
+  <script>
+    const form = document.getElementById('login-form');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const payload = {
+        username: form.username.value,
+        password: form.password.value
+      };
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        window.location.href = '/';
+      } else {
+        alert('Login failed');
+      }
+    });
+  </script>
+</body>
+</html>
