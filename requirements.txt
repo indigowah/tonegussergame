@@ -11,3 +11,5 @@ anyio
 freezegun
 playwright
 pytest-playwright
+flask
+matplotlib

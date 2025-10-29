@@ -1,777 +1,350 @@
-(function () {
-  const prefersDark = window.matchMedia(
-    '(prefers-color-scheme: dark)'
-  ).matches;
+const state = {
+    roundId: null,
+    settings: null,
+    toneSrc: null,
+    activeAudio: null,
+    awaitingNext: false,
+};
 
-  const defaultPreferences = {
-    theme: prefersDark ? 'mocha' : 'latte',
-    volume: 0.8,
-    rate: 1,
-    listeningMode: false,
-    modes: [],
-  };
+const elements = {
+    startBtn: document.getElementById("start-btn"),
+    replayBtn: document.getElementById("replay-btn"),
+    endBtn: document.getElementById("end-btn"),
+    resetBtn: document.getElementById("reset-btn"),
+    optionCount: document.getElementById("option-count"),
+    status: document.getElementById("status-message"),
+    options: document.getElementById("options-container"),
+    graphAccuracy: document.getElementById("graph-accuracy"),
+    graphCumulative: document.getElementById("graph-cumulative"),
+    statRounds: document.getElementById("stat-rounds"),
+    statGuesses: document.getElementById("stat-guesses"),
+    statAccuracy: document.getElementById("stat-accuracy"),
+    statFirstTry: document.getElementById("stat-first-try"),
+    statAverage: document.getElementById("stat-average"),
+    toneBest: document.getElementById("tone-best"),
+    toneWorst: document.getElementById("tone-worst"),
+};
 
-  const state = {
-    catalog: [],
-    currentMode: null,
-    currentItem: null,
-    audio: new Audio(),
-    gameActive: false,
-    stats: {
-      correct: 0,
-      wrong: 0,
-      streak: 0,
-      history: [],
-    },
-    preferences: loadPreferences(),
-  };
-
-  const root = document.documentElement;
-  const toastEl = document.getElementById('toast');
-  const hud = {
-    correct: document.getElementById('hud-correct'),
-    wrong: document.getElementById('hud-wrong'),
-    streak: document.getElementById('hud-streak'),
-    mode: document.getElementById('hud-mode'),
-  };
-  const promptText = document.getElementById('prompt-text');
-  const answerButtons = Array.from(document.querySelectorAll('.answer'));
-  const defaultAnswerOptions = answerButtons.map((button) => {
-    const label = (button.textContent || '').trim();
-    return {
-      id: label,
-      label,
-    };
-  });
-  const answerSection = document.querySelector('.answer-grid');
-  const modeChecklist = document.getElementById('mode-checklist');
-  const modeForm = document.getElementById('mode-form');
-  const listeningToggle = document.getElementById('listening-mode');
-  const settingsToggle = document.getElementById('settings-toggle');
-  const settingsDrawer = document.getElementById('settings-drawer');
-  const closeSettingsBtn = document.getElementById('close-settings');
-  const volumeControl = document.getElementById('volume-control');
-  const rateControl = document.getElementById('rate-control');
-  const themeToggle = document.getElementById('theme-toggle');
-  const playButton = document.getElementById('play-button');
-  const replayButton = document.getElementById('replay-button');
-  const skipButton = document.getElementById('skip-button');
-  const endButton = document.getElementById('end-button');
-  const downloadReport = document.getElementById('download-report');
-
-  function loadPreferences() {
-    try {
-      const saved = localStorage.getItem('tone-gusser-preferences');
-      if (!saved) {
-        return { ...defaultPreferences };
-      }
-      const parsed = JSON.parse(saved);
-      return { ...defaultPreferences, ...parsed };
-    } catch (error) {
-      console.warn('Failed to load preferences:', error);
-      return { ...defaultPreferences };
-    }
-  }
-
-  function savePreferences() {
-    try {
-      localStorage.setItem(
-        'tone-gusser-preferences',
-        JSON.stringify(state.preferences)
-      );
-    } catch (error) {
-      console.warn('Failed to save preferences:', error);
-    }
-  }
-
-  function applyTheme() {
-    if (!root) return;
-    const theme = state.preferences.theme;
-    root.setAttribute('data-theme', theme);
-    if (themeToggle) {
-      themeToggle.setAttribute('aria-pressed', theme === 'mocha');
-    }
-  }
-
-  function toggleTheme() {
-    const nextTheme = state.preferences.theme === 'latte' ? 'mocha' : 'latte';
-    state.preferences.theme = nextTheme;
-    applyTheme();
-    savePreferences();
-  }
-
-  function hydrateForm() {
-    if (volumeControl) {
-      volumeControl.value = state.preferences.volume;
-    }
-    if (rateControl) {
-      rateControl.value = state.preferences.rate;
-    }
-    if (listeningToggle) {
-      listeningToggle.checked = Boolean(state.preferences.listeningMode);
-    }
-  }
-
-  function updateStatsDisplay() {
-    if (!hud.correct) return;
-    hud.correct.textContent = state.stats.correct;
-    hud.wrong.textContent = state.stats.wrong;
-    hud.streak.textContent = state.stats.streak;
-    hud.mode.textContent = state.currentMode || '—';
-  }
-
-  function showToast(message, type = 'info') {
-    if (!toastEl) return;
-    toastEl.textContent = message;
-    toastEl.className = type;
-    toastEl.dataset.active = 'true';
-    window.setTimeout(() => {
-      toastEl.dataset.active = 'false';
-    }, 2400);
-  }
-
-  function hideAnswers() {
-    if (answerSection) {
-      answerSection.classList.add('hidden');
-    }
-    answerButtons.forEach((button) => {
-      button.setAttribute('disabled', 'true');
-      button.textContent = '';
-    });
-  }
-
-  function showAnswers() {
-    if (answerSection) {
-      answerSection.classList.remove('hidden');
-    }
-    answerButtons.forEach((button) => {
-      button.removeAttribute('disabled');
-    });
-  }
-
-  function normalizeOption(option, fallbackValue, fallbackLabel) {
-    if (option == null) {
-      return null;
-    }
-    if (typeof option !== 'object') {
-      const value = option ?? fallbackValue;
-      const displayName =
-        typeof option === 'string' || typeof option === 'number'
-          ? String(option)
-          : fallbackLabel ?? (value != null ? String(value) : '');
-      return { value, displayName };
-    }
-    const value =
-      option.value ??
-      option.answer ??
-      option.id ??
-      option.key ??
-      option.code ??
-      fallbackValue;
-    const displayName =
-      option.displayName ??
-      option.label ??
-      option.name ??
-      option.text ??
-      option.title ??
-      fallbackLabel ??
-      (value != null ? String(value) : '');
-    return { value, displayName };
-  }
-
-  function deriveAnswerOptions(item) {
-    if (!item) return [];
-    const primaryLists = [item.options, item.choices, item.answers].find((list) =>
-      Array.isArray(list)
+function getSelectedDifficulties() {
+    return Array.from(document.querySelectorAll(".difficulty-option:checked")).map(
+        (checkbox) => checkbox.value,
     );
+}
 
-    if (primaryLists && Array.isArray(primaryLists)) {
-      return primaryLists
-        .map((entry, index) => normalizeOption(entry, index + 1, null))
-        .filter(Boolean);
-    }
+function setStatus(message, tone = "info") {
+    elements.status.textContent = message;
+    elements.status.dataset.tone = tone;
+}
 
-    const options = [];
-    const answerValue =
-      item.answer ?? item.value ?? item.id ?? item.soundId ?? item.name ?? '';
-    const answerLabel =
-      item.displayName ??
-      item.answerDisplayName ??
-      item.label ??
-      item.name ??
-      (answerValue != null ? String(answerValue) : '');
-    const answerOption = normalizeOption(
-      { value: answerValue, displayName: answerLabel },
-      answerValue,
-      answerLabel
-    );
-    if (answerOption) {
-      options.push(answerOption);
-    }
+function resetBoard() {
+    state.roundId = null;
+    state.toneSrc = null;
+    state.awaitingNext = false;
+    stopAudio();
+    elements.options.innerHTML = "";
+    elements.replayBtn.disabled = true;
+    elements.endBtn.disabled = true;
+}
 
-    const distractors = Array.isArray(item.distractors) ? item.distractors : [];
-    distractors
-      .map((entry, index) => normalizeOption(entry, index + 2, null))
-      .filter(Boolean)
-      .forEach((entry) => options.push(entry));
-
-    return options;
-  }
-
-  function assignAnswerLabels(item = state.currentItem) {
-    if (!answerButtons.length) return;
-    const options = deriveAnswerOptions(item);
-    if (!options.length) {
-      answerButtons.forEach((button) => {
-        button.textContent = '';
-      });
-      return;
-    }
-
-    const optionMap = new Map();
-    options.forEach((option, index) => {
-      const key =
-        option && option.value != null && option.value !== ''
-          ? String(option.value)
-          : String(index + 1);
-      if (!optionMap.has(key)) {
-        optionMap.set(key, option);
-      }
-    });
-
-    answerButtons.forEach((button, index) => {
-      const datasetKey = button.dataset.answer ?? '';
-      const option = optionMap.get(datasetKey) || options[index] || null;
-      if (option) {
-        const label = option.displayName || String(option.value ?? datasetKey);
-        button.textContent = label;
-        if (option.value != null && option.value !== '') {
-          button.dataset.answer = String(option.value);
+function stopAudio() {
+    if (state.activeAudio) {
+        try {
+            state.activeAudio.pause();
+        } catch (err) {
+            // ignore
         }
-      } else {
-        button.textContent = '';
-        delete button.dataset.answer;
-      }
-    });
-  }
-
-  function resetPrompt(message = 'Select a mode and press play to start.') {
-    if (!promptText) return;
-    promptText.textContent = message;
-    promptText.className = '';
-  }
-
-  function openSettings() {
-    if (!settingsDrawer) return;
-    settingsDrawer.dataset.open = 'true';
-    settingsDrawer.setAttribute('aria-hidden', 'false');
-    if (settingsToggle) settingsToggle.setAttribute('aria-expanded', 'true');
-    document.body?.classList.add('settings-open');
-  }
-
-  function closeSettings() {
-    if (!settingsDrawer) return;
-    settingsDrawer.dataset.open = 'false';
-    settingsDrawer.setAttribute('aria-hidden', 'true');
-    if (settingsToggle) settingsToggle.setAttribute('aria-expanded', 'false');
-    document.body?.classList.remove('settings-open');
-  }
-
-  function toggleSettings() {
-    if (!settingsDrawer) return;
-    const isOpen = settingsDrawer.dataset.open === 'true';
-    if (isOpen) {
-      closeSettings();
-    } else {
-      openSettings();
     }
-  }
+    state.activeAudio = null;
+}
 
-  function fetchCatalog() {
-    return fetch('/catalog.json')
-      .then((response) => {
+function playAudio(src) {
+    if (!src) {
+        return Promise.resolve();
+    }
+
+    stopAudio();
+
+    const audio = new Audio(src);
+    audio.preload = "auto";
+    state.activeAudio = audio;
+
+    return new Promise((resolve) => {
+        const cleanup = () => {
+            if (state.activeAudio === audio) {
+                state.activeAudio = null;
+            }
+            audio.removeEventListener("ended", cleanup);
+            audio.removeEventListener("error", cleanup);
+            resolve();
+        };
+
+        audio.addEventListener("ended", cleanup);
+        audio.addEventListener("error", cleanup);
+
+        const playPromise = audio.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+            playPromise.catch(() => {
+                cleanup();
+            });
+        }
+    });
+}
+
+async function postJSON(url, payload) {
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+        const error = data && data.error ? data.error : "Request failed.";
+        throw new Error(error);
+    }
+    return data;
+}
+
+async function fetchStats() {
+    try {
+        const response = await fetch("/api/stats");
         if (!response.ok) {
-          throw new Error('Failed to load catalog');
+            return;
         }
-        return response.json();
-      })
-      .then((catalog) => {
-        state.catalog = Array.isArray(catalog) ? catalog : [];
-        renderModes();
-      })
-      .catch((error) => {
-        console.error(error);
-        showToast('Unable to load catalog data.', 'error');
-      });
-  }
+        const data = await response.json();
+        const summary = data.summary || {};
+        elements.statRounds.textContent = summary.rounds_completed || 0;
+        elements.statGuesses.textContent = summary.total_guesses || 0;
 
-  function renderModes() {
-    if (!modeChecklist) return;
-    modeChecklist.innerHTML = '';
-    const modes = state.catalog.map((entry) => entry.id || entry.name);
-    if (!modes.length) {
-      const empty = document.createElement('li');
-      empty.textContent = 'No modes available yet.';
-      modeChecklist.appendChild(empty);
-      return;
-    }
-    const selected = new Set(state.preferences.modes || []);
-    modes.forEach((modeId) => {
-      const li = document.createElement('li');
-      const label = document.createElement('label');
-      label.className = 'mode-item';
-      const checkbox = document.createElement('input');
-      checkbox.type = 'checkbox';
-      checkbox.value = modeId;
-      checkbox.checked = selected.has(modeId);
-      checkbox.addEventListener('change', onModeToggle);
-      const span = document.createElement('span');
-      span.textContent = modeId;
-      label.append(checkbox, span);
-      li.appendChild(label);
-      modeChecklist.appendChild(li);
-    });
-  }
+        const accuracy = summary.accuracy ? summary.accuracy * 100 : 0;
+        elements.statAccuracy.textContent = `${accuracy.toFixed(1)}%`;
+        elements.statFirstTry.textContent = summary.first_try_success || 0;
 
-  function onModeToggle(event) {
-    const { value, checked } = event.target;
-    const modes = new Set(state.preferences.modes || []);
-    if (checked) {
-      modes.add(value);
-    } else {
-      modes.delete(value);
-    }
-    state.preferences.modes = Array.from(modes);
-    savePreferences();
-    if (!modes.size) {
-      endGame();
-    } else if (!state.gameActive) {
-      hideAnswers();
-    }
-  }
+        const avg = summary.average_attempts_per_round || 0;
+        elements.statAverage.textContent = avg ? avg.toFixed(2) : "0";
 
-  function normalizeAnswerValue(value) {
-    if (value === null || value === undefined) {
-      return '';
-    }
-    return String(value).trim();
-  }
+        if (data.graphs) {
+            if (data.graphs.accuracy_by_difficulty) {
+                elements.graphAccuracy.src = data.graphs.accuracy_by_difficulty;
+            }
+            if (data.graphs.cumulative_accuracy) {
+                elements.graphCumulative.src = data.graphs.cumulative_accuracy;
+            }
+        }
 
-  function normalizeAnswerOption(option) {
-    if (option === null || option === undefined) {
-      return null;
+        if (data.tones) {
+            renderToneLists(data.tones);
+        } else {
+            renderToneLists({ best: [], worst: [] });
+        }
+    } catch (error) {
+        console.error("Unable to fetch stats:", error);
     }
-    if (typeof option === 'string' || typeof option === 'number') {
-      const id = normalizeAnswerValue(option);
-      return {
-        id,
-        label: String(option),
-      };
-    }
-    if (typeof option === 'object') {
-      const idSource =
-        option.id ??
-        option.value ??
-        option.answer ??
-        option.key ??
-        option.slug ??
-        option.identifier;
-      const labelSource =
-        option.label ??
-        option.text ??
-        option.name ??
-        option.title ??
-        option.display ??
-        option.caption;
-      const id =
-        idSource !== undefined && idSource !== null
-          ? normalizeAnswerValue(idSource)
-          : labelSource !== undefined && labelSource !== null
-          ? normalizeAnswerValue(labelSource)
-          : '';
-      const label =
-        labelSource !== undefined && labelSource !== null
-          ? String(labelSource)
-          : idSource !== undefined && idSource !== null
-          ? String(idSource)
-          : '';
-      if (!id) {
-        return null;
-      }
-      return {
-        id,
-        label: label || id,
-      };
-    }
-    return null;
-  }
+}
 
-  function resolveAnswerOptions(item) {
-    if (!item) {
-      return defaultAnswerOptions.map((entry) => ({ ...entry }));
-    }
-    const candidates = [
-      item.options,
-      item.choices,
-      item.answers,
-      item.answerOptions,
-      item.variants,
-    ];
-    for (const list of candidates) {
-      if (Array.isArray(list) && list.length) {
-        return list;
-      }
-    }
-    return defaultAnswerOptions.map((entry) => ({ ...entry }));
-  }
+function renderToneLists(tones) {
+    renderToneList(elements.toneWorst, tones?.worst, "Keep playing to gather data.");
+    renderToneList(elements.toneBest, tones?.best, "Keep playing to gather data.");
+}
 
-  function renderAnswers() {
-    const item = state.currentItem;
-    const rawOptions = resolveAnswerOptions(item);
-    answerButtons.forEach((button, index) => {
-      const fallback = defaultAnswerOptions[index] || { id: '', label: '' };
-      const rawOption = rawOptions[index];
-      const normalized = normalizeAnswerOption(rawOption) || fallback;
-      if (normalized.id) {
-        button.dataset.answer = normalizeAnswerValue(normalized.id);
-      } else {
-        delete button.dataset.answer;
-      }
-      const label =
-        normalized.label !== undefined && normalized.label !== null
-          ? normalized.label
-          : normalized.id;
-      if (label !== undefined && label !== null && label !== '') {
-        button.textContent = label;
-      } else if (fallback.label) {
-        button.textContent = fallback.label;
-      }
-    });
-  }
-
-  function nextPrompt() {
-    if (!state.gameActive) {
-      return;
-    }
-    if (!state.catalog.length) {
-      showToast('Load a catalog to start playing.', 'error');
-      endGame();
-      return;
-    }
-    const selectedModes = state.preferences.modes || [];
-    if (!selectedModes.length) {
-      showToast('Select at least one mode to continue.', 'error');
-      endGame();
-      return;
-    }
-    const availableModes = state.catalog.filter((entry) =>
-      selectedModes.includes(entry.id || entry.name)
-    );
-    if (!availableModes.length) {
-      showToast('Select at least one mode to continue.', 'error');
-      endGame();
-      return;
-    }
-    const mode = sample(availableModes);
-    state.currentMode = mode.id || mode.name;
-    state.currentItem = sample(mode.items || []);
-    if (!state.currentItem) {
-      showToast('Mode has no items.', 'error');
-      endGame();
-      return;
-    }
-    assignAnswerLabels(state.currentItem);
-    updateStatsDisplay();
-    showAnswers();
-    playCurrent();
-    if (promptText) {
-      promptText.textContent = 'Identify the tone you hear.';
-      promptText.className = '';
-    }
-  }
-
-  function playCurrent() {
-    if (!state.currentItem || !state.currentItem.url) return;
-    state.audio.pause();
-    state.audio.src = state.currentItem.url;
-    state.audio.volume = Number(state.preferences.volume);
-    state.audio.playbackRate = Number(state.preferences.rate);
-    state.audio.play().catch((error) => {
-      console.warn('Playback failed:', error);
-      showToast('Unable to play audio.', 'error');
-    });
-  }
-
-  function handleAnswer(event) {
-    if (!state.gameActive) {
-      showToast('Start the game before guessing.', 'info');
-      return;
-    }
-    if (state.preferences.listeningMode) {
-      showToast('Listening mode enabled: answers disabled.', 'info');
-      return;
-    }
-    const button = event.currentTarget;
-    const answer = normalizeAnswerValue(button.dataset.answer);
-    if (!state.currentItem) {
-      showToast('Press play to start.', 'info');
-      return;
-    }
-    const correctAnswer = normalizeAnswerValue(state.currentItem.answer);
-    const isCorrect = correctAnswer === answer;
-    registerResult(isCorrect, answer);
-    giveFeedback(isCorrect, button);
-    nextPrompt();
-  }
-
-  function registerResult(isCorrect, guess) {
-    const entry = {
-      timestamp: Date.now(),
-      mode: state.currentMode,
-      correctAnswer: state.currentItem.answer,
-      guess,
-      correct: isCorrect,
-    };
-    state.stats.history.push(entry);
-    if (isCorrect) {
-      state.stats.correct += 1;
-      state.stats.streak += 1;
-    } else {
-      state.stats.wrong += 1;
-      state.stats.streak = 0;
-    }
-    updateStatsDisplay();
-    updateReportLink();
-  }
-
-  function giveFeedback(isCorrect, button) {
-    if (!promptText) return;
-    promptText.textContent = isCorrect ? 'Correct!' : 'Try again!';
-    promptText.className = isCorrect ? 'correct' : 'wrong';
-    if (button) {
-      button.classList.add(isCorrect ? 'correct' : 'wrong');
-      window.setTimeout(() => {
-        button.classList.remove('correct', 'wrong');
-      }, 600);
-    }
-    playFeedbackSound(isCorrect);
-  }
-
-  let pendingFeedbackTimeout = null;
-  let pendingFeedbackListener = null;
-
-  function clearPendingFeedback() {
-    if (pendingFeedbackTimeout !== null) {
-      window.clearTimeout(pendingFeedbackTimeout);
-      pendingFeedbackTimeout = null;
-    }
-    if (pendingFeedbackListener) {
-      state.audio.removeEventListener('ended', pendingFeedbackListener);
-      pendingFeedbackListener = null;
-    }
-  }
-
-  function playFeedbackSound(isCorrect) {
-    clearPendingFeedback();
-    const url = isCorrect
-      ? '/sounds/feedback/correct.mp3'
-      : '/sounds/feedback/wrong.mp3';
-
-    const playCue = () => {
-      const sfx = new Audio(url);
-      sfx.volume = Number(state.preferences.volume);
-      sfx.play().catch(() => {
-        /* ignore */
-      });
-    };
-
-    if (isCorrect) {
-      playCue();
-      return;
-    }
-
-    const scheduleCue = () => {
-      pendingFeedbackTimeout = window.setTimeout(() => {
-        pendingFeedbackTimeout = null;
-        playCue();
-      }, 100);
-    };
-
-    const audio = state.audio;
-    if (!audio) {
-      scheduleCue();
-      return;
-    }
-
-    if (audio.ended) {
-      scheduleCue();
-      return;
-    }
-
-    const currentSrc = audio.currentSrc;
-    pendingFeedbackListener = () => {
-      // Ignore events triggered for a different source.
-      if (currentSrc && audio.currentSrc && audio.currentSrc !== currentSrc) {
+function renderToneList(container, items, emptyText) {
+    if (!container) {
         return;
-      }
-      clearPendingFeedback();
-      scheduleCue();
+    }
+    container.innerHTML = "";
+    if (!items || !items.length) {
+        const li = document.createElement("li");
+        li.className = "tone-empty";
+        li.textContent = emptyText;
+        container.appendChild(li);
+        return;
+    }
+
+    items.forEach((item) => {
+        const li = document.createElement("li");
+        const label = document.createElement("span");
+        label.className = "tone-label";
+        label.textContent = item.label;
+
+        const meta = document.createElement("span");
+        meta.className = "tone-meta";
+        const accuracy = typeof item.accuracy === "number" ? item.accuracy * 100 : 0;
+        meta.textContent = `${accuracy.toFixed(1)}% • ${item.correct}/${item.total}`;
+
+        li.appendChild(label);
+        li.appendChild(meta);
+        container.appendChild(li);
+    });
+}
+
+function renderOptions(options) {
+    elements.options.innerHTML = "";
+
+    options.forEach((label) => {
+        const button = document.createElement("button");
+        button.className = "option-button";
+        button.textContent = label;
+        button.dataset.value = label;
+        button.addEventListener("click", () => handleGuess(button));
+        elements.options.appendChild(button);
+    });
+}
+
+async function handleGuess(button) {
+    if (!state.roundId || state.awaitingNext) {
+        return;
+    }
+
+    const choice = button.dataset.value;
+    if (!choice) {
+        return;
+    }
+
+    button.disabled = true;
+
+    try {
+        const result = await postJSON("/api/guess", {
+            round_id: state.roundId,
+            choice,
+        });
+
+        button.classList.add(result.correct ? "correct" : "wrong");
+
+        await playAudio(result.feedback_audio);
+        await playAudio(state.toneSrc);
+        
+
+        await fetchStats();
+
+        if (result.correct) {
+            setStatus(`Nice! "${result.correct_label}" was the right tone.`, "success");
+            state.awaitingNext = true;
+            disableAllOptions();
+            setTimeout(() => {
+                fetchNextRound();
+            }, 1200);
+        } else {
+            setStatus("Not quite — try a different tone.", "warn");
+        }
+    } catch (error) {
+        console.error(error);
+        button.disabled = false;
+        button.classList.remove("correct", "wrong");
+        setStatus(error.message || "Error submitting guess.", "error");
+    }
+}
+
+function disableAllOptions() {
+    Array.from(elements.options.querySelectorAll(".option-button")).forEach((btn) => {
+        btn.disabled = true;
+    });
+}
+
+async function startGame() {
+    const selected = getSelectedDifficulties();
+    if (!selected.length) {
+        setStatus("Pick at least one difficulty to begin.", "warn");
+        return;
+    }
+
+    const optionCount = Number(elements.optionCount.value) || 4;
+    state.settings = {
+        difficulties: selected,
+        option_count: optionCount,
     };
-    audio.addEventListener('ended', pendingFeedbackListener, { once: true });
-  }
 
-  function endGame() {
-    state.audio.pause();
-    state.gameActive = false;
-    state.currentItem = null;
-    state.currentMode = null;
-    renderAnswers();
-    hideAnswers();
-    resetPrompt();
-    updateStatsDisplay();
-  }
-
-  function sample(list) {
-    if (!list || !list.length) return null;
-    const index = Math.floor(Math.random() * list.length);
-    return list[index];
-  }
-
-  function onListeningModeChange(event) {
-    state.preferences.listeningMode = event.target.checked;
-    savePreferences();
-    showToast(
-      state.preferences.listeningMode
-        ? 'Listening mode enabled.'
-        : 'Listening mode disabled.',
-      'info'
-    );
-    if (!state.gameActive) {
-      hideAnswers();
+    if (state.roundId) {
+        try {
+            await postJSON("/api/end", { round_id: state.roundId });
+        } catch (error) {
+            console.debug("Unable to end previous round:", error);
+        }
+        resetBoard();
     }
-  }
 
-  function onVolumeChange(event) {
-    state.preferences.volume = Number(event.target.value);
-    state.audio.volume = state.preferences.volume;
-    savePreferences();
-  }
-
-  function onRateChange(event) {
-    state.preferences.rate = Number(event.target.value);
-    state.audio.playbackRate = state.preferences.rate;
-    savePreferences();
-  }
-
-  function updateReportLink() {
-    if (!downloadReport) return;
-    const { history } = state.stats;
-    if (!history.length) {
-      downloadReport.setAttribute('disabled', 'true');
-      downloadReport.removeAttribute('href');
-      downloadReport.removeAttribute('download');
-      return;
+    try {
+        const data = await postJSON("/api/start", state.settings);
+        prepareRound(data.round);
+        await fetchStats();
+    } catch (error) {
+        setStatus(error.message || "Unable to start the game.", "error");
     }
-    downloadReport.removeAttribute('disabled');
-    const blob = new Blob([JSON.stringify(history, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    downloadReport.href = url;
-    downloadReport.download = `tone-gusser-report-${new Date()
-      .toISOString()
-      .slice(0, 10)}.json`;
-  }
+}
 
-  function onPlay() {
-    if (!state.preferences.modes || !state.preferences.modes.length) {
-      showToast('Select at least one mode in Settings to start.', 'error');
-      endGame();
-      return;
+function prepareRound(round) {
+    if (!round) {
+        setStatus("No round data received.", "error");
+        return;
     }
-    state.gameActive = true;
-    if (!state.currentItem) {
-      nextPrompt();
-      return;
-    }
-    playCurrent();
-  }
 
-  function onReplay() {
-    if (!state.gameActive) {
-      showToast('Start the game to replay.', 'info');
-      return;
-    }
-    if (!state.currentItem) {
-      showToast('Nothing to replay yet.', 'info');
-      return;
-    }
-    playCurrent();
-  }
+    state.roundId = round.id;
+    state.toneSrc = round.audio_url;
+    state.awaitingNext = false;
 
-  function onSkip() {
-    if (!state.gameActive) {
-      showToast('Start the game to skip prompts.', 'info');
-      return;
-    }
-    if (!state.catalog.length) {
-      showToast('No catalog loaded.', 'error');
-      return;
-    }
-    state.stats.streak = 0;
-    updateStatsDisplay();
-    nextPrompt();
-  }
+    elements.replayBtn.disabled = false;
+    elements.endBtn.disabled = false;
 
-  function bindEvents() {
-    if (modeForm) {
-      modeForm.addEventListener('submit', (event) => event.preventDefault());
+    renderOptions(round.options);
+    setStatus("Listen closely and pick the tone.", "info");
+    playAudio(state.toneSrc);
+}
+
+async function fetchNextRound() {
+    if (!state.settings) {
+        return;
     }
-    answerButtons.forEach((button) =>
-      button.addEventListener('click', handleAnswer)
-    );
-    if (settingsToggle) settingsToggle.addEventListener('click', toggleSettings);
-    if (closeSettingsBtn) closeSettingsBtn.addEventListener('click', closeSettings);
-    if (listeningToggle)
-      listeningToggle.addEventListener('change', onListeningModeChange);
-    if (volumeControl) volumeControl.addEventListener('input', onVolumeChange);
-    if (rateControl) rateControl.addEventListener('input', onRateChange);
-    if (playButton) playButton.addEventListener('click', onPlay);
-    if (replayButton) replayButton.addEventListener('click', onReplay);
-    if (skipButton) skipButton.addEventListener('click', onSkip);
-    if (endButton) endButton.addEventListener('click', endGame);
-    if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        closeSettings();
-      }
-    });
-  }
 
-  function initThemeFromDocument() {
-    const current = root?.getAttribute('data-theme');
-    if (current && current !== state.preferences.theme) {
-      state.preferences.theme = current;
+    try {
+        const data = await postJSON("/api/next", state.settings);
+        prepareRound(data.round);
+    } catch (error) {
+        setStatus(error.message || "Unable to fetch the next tone.", "error");
+        resetBoard();
     }
-    applyTheme();
-  }
+}
 
-  function init() {
-    if (!document.body) return;
-    hydrateForm();
-    initThemeFromDocument();
-    bindEvents();
-    renderAnswers();
-    hideAnswers();
-    resetPrompt();
-    fetchCatalog();
-    updateStatsDisplay();
-    updateReportLink();
-  }
+async function endGame() {
+    if (state.roundId) {
+        try {
+            await postJSON("/api/end", { round_id: state.roundId });
+        } catch (error) {
+            console.debug("Unable to end round:", error);
+        }
+    }
+    resetBoard();
+    setStatus("Session ended. Configure settings and start again when ready.", "info");
+}
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
-  }
-})();
+function replayTone() {
+    if (!state.toneSrc) {
+        return;
+    }
+    playAudio(state.toneSrc);
+}
+
+async function resetProgress() {
+    if (!elements.resetBtn) {
+        return;
+    }
+    elements.resetBtn.disabled = true;
+    try {
+        await postJSON("/api/reset", {});
+        await fetchStats();
+        setStatus("Progress reset. Ready for a fresh start.", "info");
+    } catch (error) {
+        console.error(error);
+        setStatus(error.message || "Unable to reset progress.", "error");
+    } finally {
+        elements.resetBtn.disabled = false;
+    }
+}
+
+elements.startBtn.addEventListener("click", startGame);
+elements.replayBtn.addEventListener("click", replayTone);
+elements.endBtn.addEventListener("click", endGame);
+if (elements.resetBtn) {
+    elements.resetBtn.addEventListener("click", resetProgress);
+}
+
+fetchStats();

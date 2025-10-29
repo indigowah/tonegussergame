@@ -11,3 +11,15 @@
    ```bash
    playwright install
    ```
+
+## Running the tone trainer
+
+1. Export the Flask app path (only the first time in a shell):
+   ```bash
+   export FLASK_APP=app.py
+   ```
+2. Start the development server:
+   ```bash
+   flask run
+   ```
+3. Visit http://127.0.0.1:5000/ in your browser to play. Progress is tracked in `tone_stats.db`.
